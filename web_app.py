@@ -1,4 +1,4 @@
-# web_app.py (v2.29 - Deployment Ready)
+# web_app.py (v2.30 - Final)
 import streamlit as st
 import json
 import os
@@ -40,7 +40,7 @@ if 'last_op_result' not in st.session_state: st.session_state.last_op_result = N
 if 'custom_recipe' not in st.session_state: st.session_state.custom_recipe = []
 if 'device_name' not in st.session_state: st.session_state.device_name = None
 
-# --- Helper Functions ---
+# --- Helper Functions (unchanged) ---
 @st.cache_resource
 def initialize_app():
     if not os.path.exists(CONFIG_FILE): return None, f"Error: {CONFIG_FILE} not found."
@@ -77,7 +77,6 @@ def build_recipe_ui(context):
     
     col1, col2 = st.columns([5, 1])
     with col1:
-        # Using a placeholder and hiding the label for better alignment
         barcode_input_val = st.text_input(
             "Scan a formula barcode here (optional):", 
             key="barcode_formula_input", 
@@ -199,9 +198,9 @@ else:
                         except Exception as e: st.error(f"Invalid barcode formula syntax: {e}"); recipe = []
                     else: recipe = st.session_state.custom_recipe
                     if not recipe: st.warning("Cannot run an empty recipe.")
-                    elif mode == "Custom Operation": run_operation(process_custom_operation, context, wip_input, recipe)
+                    elif mode == "Custom Operation": run_operation(process_custom_operation, context, st.session_state.custom_wip_input, recipe)
                     elif mode == "Move Cart":
-                        if cart_tag_name: run_operation(process_move_cart, context, cart_tag_name, recipe)
+                        if st.session_state.cart_tag_input: run_operation(process_move_cart, context, st.session_state.cart_tag_input, recipe)
                         else: st.warning("Please provide a Cart Tag Name.")
         elif mode == "Device Complete":
             with st.form(key="device_complete_form", clear_on_submit=True):
@@ -217,61 +216,66 @@ else:
                         run_operation(process_device_complete, context, file_data, manual_wip)
                     else: st.warning("Please upload a certificate file.")
         else: # Standard Operations
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                wip_input = st.text_input("Enter WIP Number:", key="wip_input", placeholder="Enter WIP Number:", label_visibility="collapsed")
-            with col2:
-                with st.popover("📷", use_container_width=True):
-                    scanned_value = barcode_scanner_component(key="std_op_scanner")
-                    if scanned_value:
-                        st.session_state.wip_input = scanned_value
-                        if 'validated_wip' in st.session_state: st.session_state.validated_wip = None
-                        st.rerun()
-            
             if mode in ("Dog Operation", "COR Operation"):
-                if wip_input and st.session_state.get('validated_wip') != wip_input:
+                wip_input_val = st.session_state.wip_input
+                if wip_input_val and st.session_state.get('validated_wip') != wip_input_val:
                     with st.spinner("Validating WIP..."):
-                        task_validation = _find_and_validate_tasks(context, wip_input)
+                        task_validation = _find_and_validate_tasks(context, wip_input_val)
                         st.session_state.task_validation_result = task_validation
-                        st.session_state.validated_wip = wip_input if task_validation.get("success") else "fail"
+                        st.session_state.validated_wip = wip_input_val if task_validation.get("success") else "fail"
                     st.rerun()
 
-                reason_data, is_order_hold, order_hold_reason = None, False, ""
-                if wip_input and st.session_state.get('validated_wip') == wip_input:
-                    task_validation = st.session_state.task_validation_result
-                    if task_validation["success"]:
-                        if mode == "Dog Operation":
-                            parent_gid = task_validation["parent_gid"]
-                            parent_data_result = context.client.get_task_details(parent_gid, opt_fields="projects.gid")
-                            parent_data = parent_data_result.get("data",{}).get("data",{})
-                            if not any(p.get('gid') == context.gids.get("PROJECT_AMAT_AGS") for p in parent_data.get('projects', [])):
+                with st.form(key=f"{mode}_form", clear_on_submit=True):
+                    col1, col2 = st.columns([5, 1])
+                    with col1:
+                        wip_input = st.text_input("Enter WIP Number:", key="wip_input", placeholder="Enter WIP Number:", label_visibility="collapsed")
+                    with col2:
+                        with st.popover("📷", use_container_width=True):
+                            scanned_value = barcode_scanner_component(key="std_op_scanner")
+                            if scanned_value:
+                                st.session_state.wip_input = scanned_value
+                                if 'validated_wip' in st.session_state: st.session_state.validated_wip = None
+                                st.rerun()
+                    
+                    reason_data, is_order_hold, order_hold_reason = None, False, ""
+                    if wip_input and st.session_state.get('validated_wip') == wip_input:
+                        task_validation = st.session_state.task_validation_result
+                        if task_validation["success"]:
+                            if mode == "Dog Operation":
+                                # Dog-specific UI elements here
                                 st.subheader("Order Hold Workflow")
                                 is_order_hold = st.checkbox("Is this an ORDER HOLD?")
                                 order_hold_reason = st.text_input("Why is it an ORDER HOLD?")
-                        st.markdown("---")
-                        st.subheader("Standard Reason")
-                        reason_data = cor_dog_reason_selector()
-                elif wip_input and st.session_state.get('validated_wip') == "fail":
-                     st.error(st.session_state.get('task_validation_result', {}).get('message', 'Validation failed.'))
-                elif not wip_input:
-                    st.info("Enter or scan a WIP number to see actions.")
+                            st.markdown("---")
+                            st.subheader("Standard Reason")
+                            reason_data = cor_dog_reason_selector()
+                    elif wip_input and st.session_state.get('validated_wip') == "fail":
+                        st.error(st.session_state.get('task_validation_result', {}).get('message', 'Validation failed.'))
+                    elif not wip_input:
+                        st.info("Enter or scan a WIP number to see actions.")
 
-                with st.form(key=f"{mode}_form_submit", clear_on_submit=True):
                     submitted = st.form_submit_button("Run Operation")
                     if submitted:
                         st.session_state.validated_wip = None 
-                        st.session_state.wip_input = "" # Clear input on submit
                         if mode == "Dog Operation":
-                            run_operation(process_dog_operation, context, wip_input, reason_data, order_hold_reason)
+                            run_operation(process_dog_operation, context, st.session_state.wip_input, reason_data, order_hold_reason)
                         elif mode == "COR Operation":
-                            run_operation(process_cor_operation, context, wip_input, reason_data)
+                            run_operation(process_cor_operation, context, st.session_state.wip_input, reason_data)
             else: # Heater Board & Cleaned
                 with st.form(key=f"{mode}_form", clear_on_submit=True):
+                    col1, col2 = st.columns([5, 1])
+                    with col1:
+                        wip_input = st.text_input("Enter WIP Number:", key="wip_input", placeholder="Enter WIP Number:", label_visibility="collapsed")
+                    with col2:
+                        with st.popover("📷", use_container_width=True):
+                            scanned_value = barcode_scanner_component(key="std_op_scanner_2") # Different key
+                            if scanned_value:
+                                st.session_state.wip_input = scanned_value
+                                st.rerun()
                     submitted = st.form_submit_button("Run Operation")
                     if submitted:
-                        st.session_state.wip_input = ""
-                        if mode == "Heater Board Swapped": run_operation(process_heater_board_swap, context, wip_input)
-                        elif mode == "Device Cleaned": run_operation(process_device_cleaned, context, wip_input)
+                        if mode == "Heater Board Swapped": run_operation(process_heater_board_swap, context, st.session_state.wip_input)
+                        elif mode == "Device Cleaned": run_operation(process_device_cleaned, context, st.session_state.wip_input)
 
         st.markdown("---")
         st.subheader("Activity Log")
