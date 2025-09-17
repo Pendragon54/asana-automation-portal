@@ -1,4 +1,4 @@
-# web_app.py (v2.30 - Final)
+# web_app.py (v2.31 - Final)
 import streamlit as st
 import json
 import os
@@ -223,7 +223,7 @@ else:
                         task_validation = _find_and_validate_tasks(context, wip_input_val)
                         st.session_state.task_validation_result = task_validation
                         st.session_state.validated_wip = wip_input_val if task_validation.get("success") else "fail"
-                    st.rerun()
+                    # --- CHANGE: The problematic st.rerun() line has been removed ---
 
                 with st.form(key=f"{mode}_form", clear_on_submit=True):
                     col1, col2 = st.columns([5, 1])
@@ -242,10 +242,13 @@ else:
                         task_validation = st.session_state.task_validation_result
                         if task_validation["success"]:
                             if mode == "Dog Operation":
-                                # Dog-specific UI elements here
-                                st.subheader("Order Hold Workflow")
-                                is_order_hold = st.checkbox("Is this an ORDER HOLD?")
-                                order_hold_reason = st.text_input("Why is it an ORDER HOLD?")
+                                parent_gid = task_validation["parent_gid"]
+                                parent_data_result = context.client.get_task_details(parent_gid, opt_fields="projects.gid")
+                                parent_data = parent_data_result.get("data",{}).get("data",{})
+                                if not any(p.get('gid') == context.gids.get("PROJECT_AMAT_AGS") for p in parent_data.get('projects', [])):
+                                    st.subheader("Order Hold Workflow")
+                                    is_order_hold = st.checkbox("Is this an ORDER HOLD?")
+                                    order_hold_reason = st.text_input("Why is it an ORDER HOLD?")
                             st.markdown("---")
                             st.subheader("Standard Reason")
                             reason_data = cor_dog_reason_selector()
